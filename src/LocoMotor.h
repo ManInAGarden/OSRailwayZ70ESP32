@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+#define NOSTDBY_PIN 20000
+
 enum motordirenum {forward=0, backward=1};
 
 class LocoMotor {
@@ -22,15 +24,17 @@ class LocoMotor {
     bool coaster_enabled;
     unsigned long int timer_delta,
       last_time; 
+    bool handle_stdby = false;
 
     void motion_control();
     void set_motor_polarity(motordirenum dir);
     void change_direction(motordirenum newdirection);
     bool time_over();
     void direct_set_speed(int speedval);
+    const char *get_direction_str();
 
   public:
-    LocoMotor(int channel, int inpin1, int inpin2, int pwmpin, int stdbypin, double frequency, int bits, int accelstep=5);
+    LocoMotor(int channel, int inpin1, int inpin2, int pwmpin, int stdbypin=NOSTDBY_PIN, double frequency=5000, int bits=8, int accelstep=5);
     
     /// @brief start motor operations
     void start_operation();
@@ -56,7 +60,12 @@ class LocoMotor {
     int get_actual_speed() {return actual_speed;}
     int get_acceleration_step() {return acceleration_step;}
     int get_max_speed() {return max_speed;}
+    bool handles_stdby() {return handle_stdby;}
+
     motordirenum get_direction() {return motion_direction;}
 };
+
+
+
 
 #endif

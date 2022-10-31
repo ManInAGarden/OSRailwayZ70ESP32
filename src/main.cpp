@@ -26,6 +26,12 @@
 #define MOT_CHAN_RES 10 //channel resultion is 10 bit, whcih gives values 0..1023
 #define MOT_STDBY 27 //GIO 27 for motor driver standby
 #define MOT_PWM 0 //GPIO0 for motor speed PWM signal
+#define MOT_IN1 5 //Motor in pin 1 GPIO5
+#define MOT_IN2 4 //Motor in pin2 GPIO4
+#define HB_CHAN 2 //motor channel abused for the high beams
+#define HB_IN1 14 // High beam side 2 GPIO12
+#define HB_IN2 12 // High beam side 1 GPIO14
+#define HB_PWN 2 //High beam pwm (brighness) GPIO 2
 
 /* Set these to your desired credentials. */
 const char *ssid = "OSRZ70";
@@ -35,18 +41,13 @@ const char *password = "osrailway";
 bool highBeamActive = false;
 bool motionActive = false;
 
-
+//backlight pins
 int LED_BL2 = 15; // Red light on side 2 GPIO15
 int LED_BL1 = 13; // Red light on side 1 GPIO13
-int LED_HB2 = 14; // High beam side 2 GPIO12
-int LED_HB1 = 12; // High beam side 1 GPIO14
 
-int LED_HDL = 2;  //PWM for headlights controlled by motor board
 
-int motor_AIN1 = 5; //Motor in pin 1 GPIO5
-int motor_AIN2 = 4; //Motor in pin2 GPIO4
 
-LocoMotor* motor;
+LocoMotor *motor, *highbeams;
 
 WebServer server(80);
 
@@ -97,11 +98,12 @@ void motorOperation(){
   digitalWrite(LED_BL1, !dirb);
     
   if(highBeamActive){
-    digitalWrite(LED_HB2, dirb);
-    digitalWrite(LED_HB1, !dirb);
+    if(md != highbeams->get_direction()) //when dir is changed switch off first to allow for smooth swichting on afterwars
+      highbeams->immediate_stop();
+
+    highbeams->set_speed(highbeams->get_max_speed(), md);
   } else {
-    digitalWrite(LED_HB2, 0);
-    digitalWrite(LED_HB1, 0);
+    highbeams->set_speed(0, md); //no lights but change direction
   }
 }
 
@@ -116,16 +118,21 @@ void switchLightOn(){
     Log.traceln("In switchLightOn");
     highBeamActive = true;
     motordirenum md = motor->get_direction();
-    bool dirb = (md==forward) ? true : false;
-    digitalWrite(LED_HB2, dirb);
-    digitalWrite(LED_HB1, !dirb);
+    if(md!=highbeams->get_direction())
+      highbeams->immediate_stop();
+
+    int maxhb = highbeams->get_max_speed();
+    highbeams->set_speed(maxhb, md);
 }
 
 void switchLightOff(){
     Log.traceln("In switchLightOff");
     highBeamActive = false;
-    digitalWrite(LED_HB2, 0);
-    digitalWrite(LED_HB1, 0);  
+    motordirenum md = motor->get_direction();
+    if(md!=highbeams->get_direction())
+      highbeams->immediate_stop();
+
+    highbeams->set_speed(0, md);
 }
 
 void motionStop(){
@@ -180,24 +187,20 @@ void setup() {
   Serial.println();
   Log.traceln("Creating Access Point: %s", ssid);
   
-  motor = new LocoMotor(MOT_CHAN, motor_AIN1, motor_AIN2, MOT_PWM, MOT_STDBY, MOT_CHAN_FREQ, MOT_CHAN_RES);
+  motor = new LocoMotor(MOT_CHAN, MOT_IN1, MOT_IN2, MOT_PWM, MOT_STDBY, MOT_CHAN_FREQ, MOT_CHAN_RES);
+  highbeams = new LocoMotor(HB_CHAN, HB_IN1, HB_IN2, HB_PWN);
+  highbeams->immediate_stop(); //switch of the high beams initially
+
   pinMode(LED_BL2, OUTPUT);
   pinMode(LED_BL1, OUTPUT);
-  pinMode(LED_HB2, OUTPUT);
-  pinMode(LED_HB1, OUTPUT);
   
-  pinMode(LED_HDL, OUTPUT);
-  Log.traceln("%s", "Declaration of pin modes successful");
+  Log.traceln("%s", "Declaration of pin modes and motors successful");
 
   flashBacklights(); //flash red lights to signal that most of initialisation has been done
-  
-  digitalWrite(LED_HB2, 0);
-  digitalWrite(LED_HB1, 0);
-
-  analogWrite(LED_HDL, 1023);
 
   Log.traceln("Enabling motor operations from now on");
   motor->start_operation();
+  highbeams->start_operation();
 	WiFi.softAP(ssid, password);
 
 	IPAddress myIP = WiFi.softAPIP();
@@ -225,6 +228,8 @@ void setup() {
 void loop() {
 	server.handleClient();
   motor->operate(); //one step for motor decellaration/acceleration
+  highbeams->operate();
+  
   delay(2); //allow cpu to do other things
 }
 

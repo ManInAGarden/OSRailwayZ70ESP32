@@ -19,117 +19,124 @@ LocoMotor::LocoMotor(int channel, int inpin1, int inpin2,  int pwmpin, int stdby
   timer_delta = 10; //timer ticks every 10ms or later whenever operate() is called
   last_time = 0;
 
-  pinMode(motstdbypin, OUTPUT);
-  pinMode(motstdbypin, OUTPUT);
-  digitalWrite(motstdbypin, LOW);
+  if (stdbypin != NOSTDBY_PIN) {
+    handle_stdby = true;
+    pinMode(motstdbypin, OUTPUT);
+    digitalWrite(motstdbypin, LOW);
+  }
+
   pinMode(motinpin1, OUTPUT);
   pinMode(motinpin2, OUTPUT);
 
   ledcSetup(motchannel, motfrequency, motbits); //set PWM frequency and resolution for motor
   ledcAttachPin(motpwmpin, motchannel); //attach channel to gpio pin
   ledcWrite(motchannel, 0);
+  change_direction(forward);
 
-  Log.traceln("Motor initialized on channel %d, pwmpin %d, stdbypin %d, in1/2 %d/%d",
+  Log.traceln("Motor %d - Motor initialized on channel %d, pwmpin %d, stdbypin %d, in1/2 %d/%d",
+    motchannel,
     motchannel,
     motpwmpin,
     motstdbypin,
     motinpin1, motinpin2);
 
-  Log.traceln("Max speed value for motor is %d", max_speed);
+  Log.traceln("Motor %d - Max speed value for motor is %d", motchannel, max_speed);
 }
 
 void LocoMotor::immediate_stop(){
-  Log.traceln("in LocoMotor::immediate_stop()");
+  Log.traceln("Motor %d - in LocoMotor::immediate_stop()", motchannel);
   ledcWrite(motchannel, 0);
   actual_speed = 0;
   target_speed = 0;
-  //digitalWrite(motinpin1, HIGH);
-  //digitalWrite(motinpin2, HIGH);
 }
 
 void LocoMotor::start_operation() {
-  Log.traceln("in LocoMotor::start_operation()");
+  Log.traceln("Motor %d - in LocoMotor::start_operation()", motchannel);
   coaster_enabled = true;
   set_motor_polarity(motion_direction);
   direct_set_speed(0);
-  digitalWrite(motstdbypin, HIGH);
-  Log.traceln("LocoMotor::start_operation() done");
+  if(handle_stdby)
+    digitalWrite(motstdbypin, HIGH);
+  Log.traceln("Motor %d - LocoMotor::start_operation() done", motchannel);
 }
 
 void LocoMotor::set_motor_polarity(motordirenum dir){
   	bool dirb = (dir==forward) ? false : true;
-    Log.traceln("Setting motor polarity to (1/2) %d/%d", dirb, !dirb);
+    Log.traceln("Motor %d - Setting motor polarity to (1/2) %d/%d", motchannel, dirb, !dirb);
     digitalWrite(motinpin1, dirb);
     digitalWrite(motinpin2, !dirb);
 }
 
+/// @brief set speed an direction
+/// @param speed new speed value
+/// @param newdir new direction
 void LocoMotor::set_speed(unsigned int speed, motordirenum newdir) {
-  Log.traceln("in LocoMotor::set_speed(speed=%d, dir=%d)", speed, newdir);
+  Log.traceln("Motor %d - in LocoMotor::set_speed(speed=%d, dir=%d)", motchannel, speed, newdir);
 
-  target_speed = speed;
+  if (speed <= max_speed)
+    target_speed = speed;
+  else
+    target_speed = max_speed;
+  
   bool dochange = false;
 
-  if(newdir == backward){
-    if(motion_direction != backward && actual_speed > 100){
-      target_speed = 0;
-    } else {
-      dochange = true;
-    }
-  } else {
-    if(motion_direction != forward && actual_speed > 100){
-      target_speed = 0;
-    } else {
-      dochange = true;
-    }
-  }
+  if (newdir != motion_direction && actual_speed > 100)
+    target_speed = 0;
+  else
+    dochange = true;
 
   if(dochange)
     change_direction(newdir);
 }
 
-void LocoMotor::set_speed(unsigned int speed) {
-  Log.traceln("in LocoMotor::set_speed(speed=%d)", speed);
+const char* LocoMotor::get_direction_str(){
+  return (motion_direction==forward) ? "forward" : "backward";
+}
 
-  target_speed = speed;
+void LocoMotor::set_speed(unsigned int speed) {
+  Log.traceln("Motor %d - in LocoMotor::set_speed(speed=%d)", motchannel, speed);
+  if (speed <= max_speed)
+    target_speed = speed;
+  else
+    target_speed = max_speed;
 }
 
 void LocoMotor::change_direction(motordirenum nd){
-  Log.traceln("in LocoMotor::change_direction(dir=%d)", nd);
+  Log.traceln("Motor %d - in LocoMotor::change_direction(dir=%d)", motchannel, nd);
 
   if (motion_direction != nd) {
-    if (nd==forward){
-      Log.traceln("Changing direction to <forward>");
-      digitalWrite(motinpin1, HIGH);
-      digitalWrite(motinpin2, LOW);  
-    }
-    else {
-      Log.traceln("Changing direction to <backward>");
-      digitalWrite(motinpin1, LOW);
-      digitalWrite(motinpin2, HIGH);  
-    }
+    Log.traceln("Changing direction to <%s>", get_direction_str());
+    set_motor_polarity(nd);
     motion_direction = nd;
   }
 }
 
 void LocoMotor::motion_control(){
-    if(actual_speed < target_speed){
-      actual_speed = actual_speed + acceleration_step;
-    } else if(actual_speed > target_speed){
-      actual_speed = actual_speed - acceleration_step;
-    }    
-    if(actual_speed > max_speed){
-      actual_speed = max_speed;
-    }
-    if(actual_speed < 0){
-      actual_speed = 0;
-    }
+  if (actual_speed==target_speed)
+    return;
 
-    if (actual_speed != target_speed)
-      direct_set_speed(actual_speed);
+  if(actual_speed < target_speed){
+    actual_speed = actual_speed + acceleration_step;
+  } else if(actual_speed > target_speed){
+    actual_speed = actual_speed - acceleration_step;
+  }    
+  if(actual_speed > max_speed){
+    actual_speed = max_speed;
+  }
+
+  if(actual_speed < 0){
+    actual_speed = 0;
+  }
+
+  int ms = get_max_speed();
+  if (actual_speed > ms)
+    actual_speed = ms;
+
+  direct_set_speed(actual_speed);
 }
 
 void LocoMotor::direct_set_speed(int speedval){
-  Log.traceln("in LocoMotor::direct_set_speed(speedval=%d)", speedval);
+  Log.traceln("Motor %d - in LocoMotor::direct_set_speed(speedval=%d)", motchannel, speedval);
   ledcWrite(motchannel, speedval);
 }
 
