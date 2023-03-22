@@ -34,9 +34,19 @@
 #define HB_PWN 2 //High beam pwm (brighness) GPIO 2
 
 /* Set these to your desired credentials. */
+const char *ssid = "OSRV200";
+const char *password = "osrailway";
+IPAddress local_ip(192,168,5,1); //IP Adress for the loco
+IPAddress gateway(192,168,5,1);
+IPAddress subnet(255,255,255,0);
+
+/*
 const char *ssid = "OSRZ70";
 const char *password = "osrailway";
-
+IPAddress local_ip(192,168,4,1); //IP Adress for the loco
+IPAddress gateway(192,168,4,1);
+IPAddress subnet(255,255,255,0);
+*/
 
 bool highBeamActive = false;
 bool motionActive = false;
@@ -53,7 +63,7 @@ WebServer server(80);
 
 /************************************************************************** 
  *  
- *  Server IP address is: http://192.168.4.1
+ *  Server IP address is: http://<ip_adress> see const definitions at th ebeginning of this code
  *  
  *  When you have connected your device to the wifi network, open the browser and enter the IP address above.
  *  
@@ -201,9 +211,12 @@ void setup() {
   Log.traceln("Enabling motor operations from now on");
   motor->start_operation();
   highbeams->start_operation();
+
+  WiFi.softAPConfig(local_ip, gateway, subnet);
 	WiFi.softAP(ssid, password);
 
 	IPAddress myIP = WiFi.softAPIP();
+  
   Log.traceln("Accesspoint ready at IP: %p", myIP);
 
   if (MDNS.begin("esp32")) {
